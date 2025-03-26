@@ -5,4 +5,5 @@ const config = {
     : 'https://cv-review-generator.vercel.app'
 };
 
+// Export as default
 export default config; 

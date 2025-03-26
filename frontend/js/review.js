@@ -1,3 +1,6 @@
+// Import config
+import config from './config.js';
+
 console.log('review.js loaded');
 document.addEventListener('DOMContentLoaded', () => {
   const uploadedFileNameElement = document.getElementById('uploadedFileName');
@@ -219,7 +222,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('file', file);
   
-        const response = await fetch('http://localhost:3000/api/premium/interview-prep', {
+        const response = await fetch(`${config.apiUrl}/api/premium/interview-prep`, {
           method: 'POST',
           body: formData
         });
@@ -280,8 +283,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('file', file);
   
-        const response = await fetch('http://localhost:3000/api/premium/industry-optimize', {
-        method: 'POST',
+        const response = await fetch(`${config.apiUrl}/api/premium/industry-optimize`, {
+          method: 'POST',
           body: formData
         });
   
