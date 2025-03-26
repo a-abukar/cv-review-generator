@@ -165,14 +165,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const result = await response.json();
         
         if (!response.ok) {
-          throw new Error(result.error || 'Failed to generate review');
+          throw new Error(result.error || result.message || 'Failed to generate review');
         }
   
         console.log('Received response from backend:', result);
         return result;
       } catch (error) {
         console.error('Error in getCVReview:', error);
-        throw error;
+        throw new Error(error.message || 'An error occurred while processing your CV');
       }
     }
   

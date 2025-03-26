@@ -16,15 +16,8 @@ dotenv.config();
 // Initialize PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = path.resolve(require.resolve('pdfjs-dist/legacy/build/pdf.worker.js'));
 
-// Configure multer for file upload
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, path.join(__dirname, 'uploads'))
-  },
-  filename: function (req, file, cb) {
-    cb(null, file.originalname)
-  }
-});
+// Configure multer for memory storage
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage: storage,
@@ -73,8 +66,18 @@ const openAILimiter = rateLimit({
   }
 });
 
-// Basic middleware
-app.use(cors());
+// Configure CORS
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:8000',
+    'https://cv-review-generator.vercel.app'
+  ],
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type']
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Request logging middleware
@@ -115,27 +118,22 @@ function truncateText(text, maxLength = 4000) {
 }
 
 // Function to extract visual information from PDF (currently not used, but available)
-async function extractVisualInfo(pdfPath) {
+async function extractVisualInfo(pdfDoc) {
   try {
-    const data = await fs.readFile(pdfPath);
-    const pdf = await pdfjsLib.getDocument({ data }).promise;
-    const page = await pdf.getPage(1);
-    
+    const page = await pdfDoc.getPage(1);
     const viewport = page.getViewport({ scale: 1.0 });
     const textContent = await page.getTextContent();
     
-    // Extract font information (limited to most common fonts)
     const fonts = new Set();
     textContent.items.forEach(item => {
       if (item.fontName) fonts.add(item.fontName);
     });
 
-    // Extract layout information (simplified)
     const layout = {
       width: viewport.width,
       height: viewport.height,
       textItems: textContent.items.slice(0, 20).map(item => ({
-        text: item.str.substring(0, 50), // Limit text length
+        text: item.str.substring(0, 50),
         x: item.transform[4],
         y: item.transform[5],
         fontName: item.fontName
@@ -143,7 +141,7 @@ async function extractVisualInfo(pdfPath) {
     };
 
     return {
-      fonts: Array.from(fonts).slice(0, 5), // Limit to 5 most common fonts
+      fonts: Array.from(fonts).slice(0, 5),
       layout: layout
     };
   } catch (error) {
@@ -157,34 +155,23 @@ async function extractVisualInfo(pdfPath) {
 
 // CV Review endpoint using file upload
 app.post('/api/review', upload.single('file'), async (req, res) => {
-  debug.log('Received review request');
-  debug.log('Request headers:', req.headers);
-  debug.log('Request body:', req.body);
-  debug.log('Request file:', req.file);
-
-  if (!req.file) {
-    debug.error('No file uploaded');
-    return res.status(400).json({ error: 'No file uploaded' });
-  }
-
   try {
-    debug.log('File received:', req.file);
-    debug.log('Reading PDF file from path:', req.file.path);
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
 
-    // Read the PDF file
-    const dataBuffer = await fs.readFile(req.file.path);
-    debug.log('PDF file read, size:', dataBuffer.length);
+    debug.log('File received in memory, size:', req.file.size);
 
-    // Parse PDF content
-    debug.log('PDF file read, parsing content');
-    const pdfData = await pdfParse(dataBuffer);
+    // Parse PDF content from buffer
+    const pdfData = await pdfParse(req.file.buffer);
     const pdfText = pdfData.text;
     debug.log('PDF text extracted, length:', pdfText.length);
 
     // Extract visual information
     let visualInfo = {};
     try {
-      visualInfo = await extractVisualInfo(req.file.path);
+      const pdfDoc = await pdfjsLib.getDocument({ data: req.file.buffer }).promise;
+      visualInfo = await extractVisualInfo(pdfDoc);
     } catch (error) {
       debug.error('Error extracting visual information:', error);
     }
@@ -321,17 +308,8 @@ ${pdfText}`;
     res.json({ contentReview, designReview });
     debug.log('Review response sent to client');
   } catch (error) {
-    debug.error('Error processing review request', error);
-    // Clean up the uploaded file in case of error
-    try {
-      if (req.file && req.file.path) {
-        await fs.unlink(req.file.path);
-        debug.log('Cleaned up file after error');
-      }
-    } catch (cleanupError) {
-      debug.error('Error cleaning up file after error:', cleanupError);
-    }
-    res.status(500).json({ error: 'Failed to generate review' });
+    debug.error('Error processing review:', error);
+    res.status(500).json({ error: error.message || 'An error occurred while processing the review' });
   }
 });
 
@@ -576,24 +554,19 @@ app.post('/api/chatgpt/review-summary', async (req, res) => {
 
 // Error handling middleware must be after all routes
 app.use((err, req, res, next) => {
-  debug.error('Global error handler caught:', err);
-  
-  // Handle multer errors
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File size too large. Maximum size is 5MB.' });
-    }
-    return res.status(400).json({ error: 'Error uploading file.' });
-  }
-
-  // Handle other errors
+  console.error(err.stack);
   res.status(500).json({ 
-    error: 'An error occurred',
-    details: err.message 
+    error: 'Something went wrong!',
+    message: err.message 
   });
 });
 
-// Start server
-app.listen(port, () => {
-  debug.log(`Server running on port ${port}`);
-});
+// Start the server only if not running on Vercel
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+}
+
+// Export the Express API
+module.exports = app;
