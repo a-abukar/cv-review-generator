@@ -154,9 +154,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('file', file);
   
-        const response = await fetch('http://localhost:3000/api/review', {
+        const response = await fetch(`${config.apiUrl}/api/review`, {
           method: 'POST',
-          body: formData // Don't set Content-Type header, let browser set it with boundary
+          body: formData
         });
   
         const result = await response.json();
@@ -372,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Call ChatGPT API to analyze the review and generate summary
-        const response = await fetch('http://localhost:3000/api/chatgpt/review-summary', {
+        const response = await fetch(`${config.apiUrl}/api/chatgpt/review-summary`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
