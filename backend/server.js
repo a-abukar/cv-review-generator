@@ -16,7 +16,7 @@ dotenv.config();
 // Initialize PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = path.resolve(require.resolve('pdfjs-dist/legacy/build/pdf.worker.js'));
 
-// Configure multer for memory storage
+// Configure multer for memory storage with optimized settings
 const storage = multer.memoryStorage();
 
 const upload = multer({
@@ -180,23 +180,32 @@ app.post('/api/review', upload.single('file'), async (req, res) => {
     debug.log('File received in memory, size:', req.file.size);
 
     // Set a longer timeout for the response
-    res.setTimeout(55000); // 55 seconds
+    res.setTimeout(290000); // 290 seconds
 
-    // Parse PDF content from buffer
-    const pdfData = await pdfParse(req.file.buffer);
+    // Parse PDF content from buffer with optimized settings
+    const pdfData = await pdfParse(req.file.buffer, {
+      max: 5, // Only parse first 5 pages
+      pagerender: render_page // Custom render function
+    });
+    
     const pdfText = pdfData.text;
     debug.log('PDF text extracted, length:', pdfText.length);
 
-    // Extract visual information
+    // Extract visual information with timeout
     let visualInfo = {};
     try {
-      const pdfDoc = await pdfjsLib.getDocument({ data: req.file.buffer }).promise;
+      const pdfDoc = await Promise.race([
+        pdfjsLib.getDocument({ data: req.file.buffer }).promise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('PDF parsing timeout')), 30000)
+        )
+      ]);
       visualInfo = await extractVisualInfo(pdfDoc);
     } catch (error) {
       debug.error('Error extracting visual information:', error);
     }
 
-    const truncatedText = truncateText(pdfText);
+    const truncatedText = truncateText(pdfText, 3000); // Reduce max length
     const prompt = `Review this CV in simple, direct British English. Address the candidate directly and be specific about what needs changing.
 
 ### Content Review:
@@ -244,15 +253,15 @@ Now, let's fix your CV's design:
 Remember: Keep your bullet points to one line, use high contrast colours, and ensure your CV follows this exact structure.
 
 CV Content:
-${pdfText}`;
+${truncatedText}`;
 
     const systemMessage = "You are a friendly but direct British CV expert. Write in simple, clear British English. Address the candidate by name. Be extremely specific about what needs changing and where. No vague suggestions - point to exact content and give clear fixes.";
 
-    debug.log('Sending prompt to OpenAI:', { prompt: prompt.substring(0, 200) + '...' });
+    debug.log('Sending prompt to OpenAI');
 
     // Add timeout promise
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Operation timed out')), 54000)
+      setTimeout(() => reject(new Error('Operation timed out')), 280000)
     );
 
     // Race between the OpenAI call and timeout
@@ -271,7 +280,6 @@ ${pdfText}`;
 
     debug.log('Received response from OpenAI');
     const openAiResponse = completion.choices[0].message.content;
-    debug.log('Raw OpenAI response:', openAiResponse.substring(0, 200) + '...');
 
     // New approach to split reviews
     function extractReviews(text) {
@@ -322,19 +330,6 @@ ${pdfText}`;
     // Extract the reviews
     const { contentReview, designReview } = extractReviews(openAiResponse);
 
-    debug.log('Split review sections:', {
-        contentReview: contentReview.substring(0, 100) + '...',
-        designReview: designReview.substring(0, 100) + '...'
-    });
-
-    // Clean up the uploaded file
-    try {
-      await fs.unlink(req.file.path);
-      debug.log('Cleaned up uploaded file');
-    } catch (error) {
-      debug.error('Error cleaning up file:', error);
-    }
-
     res.json({ contentReview, designReview });
     debug.log('Review response sent to client');
   } catch (error) {
@@ -350,6 +345,27 @@ ${pdfText}`;
     }
   }
 });
+
+// Custom render function for PDF parsing
+function render_page(pageData) {
+  let render_options = {
+    normalizeWhitespace: true,
+    disableCombineTextItems: false
+  };
+
+  return pageData.getTextContent(render_options)
+    .then(function(textContent) {
+      let lastY, text = '';
+      for (let item of textContent.items) {
+        if (lastY != item.transform[5]) {
+          text += '\n';
+        }
+        text += item.str;
+        lastY = item.transform[5];
+      }
+      return text;
+    });
+}
 
 // Premium feature endpoints
 app.post('/api/premium/interview-prep', upload.single('file'), async (req, res) => {

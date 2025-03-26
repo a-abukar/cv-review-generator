@@ -27,8 +27,8 @@
   ],
   "functions": {
     "backend/server.js": {
-      "memory": 1024,
-      "maxDuration": 60
+      "memory": 3008,
+      "maxDuration": 300
     }
   },
   "env": {
