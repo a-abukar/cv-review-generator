@@ -157,22 +157,36 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('file', file);
   
+        showLoadingState('Analyzing your CV...');
+        
         const response = await fetch(`${config.apiUrl}/api/review`, {
           method: 'POST',
           body: formData
         });
-  
-        const result = await response.json();
-        
+
         if (!response.ok) {
-          throw new Error(result.error || result.message || 'Failed to generate review');
+          const result = await response.json();
+          if (response.status === 504) {
+            throw new Error('The review is taking longer than expected. Please try again in a few moments.');
+          } else if (result.error) {
+            throw new Error(result.error);
+          } else {
+            throw new Error('Failed to get CV review');
+          }
         }
-  
+
+        const result = await response.json();
+        if (!result.contentReview || !result.designReview) {
+          throw new Error('Invalid response format from server');
+        }
+
         console.log('Received response from backend:', result);
         return result;
       } catch (error) {
         console.error('Error in getCVReview:', error);
-        throw new Error(error.message || 'An error occurred while processing your CV');
+        hideLoadingState();
+        showError(error.message || 'An error occurred while processing your CV');
+        throw error;
       }
     }
   
@@ -580,5 +594,39 @@ document.addEventListener('DOMContentLoaded', () => {
       // For demo purposes, return the content review text
       // In production, this should extract text from the PDF
       return document.getElementById('contentReview').innerText;
+  }
+
+  function showLoadingState(message) {
+    const loadingDiv = document.getElementById('loadingState');
+    if (!loadingDiv) {
+      const div = document.createElement('div');
+      div.id = 'loadingState';
+      div.className = 'loading-state';
+      div.innerHTML = `
+        <div class="loading-spinner"></div>
+        <p class="loading-message">${message}</p>
+        <p class="loading-submessage">This may take up to a minute...</p>
+      `;
+      document.body.appendChild(div);
+    } else {
+      loadingDiv.querySelector('.loading-message').textContent = message;
+    }
+  }
+
+  function hideLoadingState() {
+    const loadingDiv = document.getElementById('loadingState');
+    if (loadingDiv) {
+      loadingDiv.remove();
+    }
+  }
+
+  function showError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error-message';
+    errorDiv.textContent = message;
+    document.body.appendChild(errorDiv);
+    setTimeout(() => {
+      errorDiv.remove();
+    }, 3000);
   }
 });

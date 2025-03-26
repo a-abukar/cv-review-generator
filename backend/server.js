@@ -109,6 +109,23 @@ app.use((req, res, next) => {
 // Apply rate limiter to OpenAI endpoints
 app.use('/api/chatgpt/review-summary', openAILimiter);
 
+// Add timeout middleware
+const timeout = (seconds) => {
+  const ms = seconds * 1000;
+  return (req, res, next) => {
+    res.setTimeout(ms, () => {
+      res.status(504).json({
+        error: 'Request timeout - The operation took too long to complete'
+      });
+    });
+    next();
+  };
+};
+
+// Apply timeout middleware to review endpoints
+app.use('/api/review', timeout(55)); // 55 seconds timeout
+app.use('/api/chatgpt/review-summary', timeout(55));
+
 debug.log('Middleware configured');
 
 // Function to truncate text to a maximum length
@@ -161,6 +178,9 @@ app.post('/api/review', upload.single('file'), async (req, res) => {
     }
 
     debug.log('File received in memory, size:', req.file.size);
+
+    // Set a longer timeout for the response
+    res.setTimeout(55000); // 55 seconds
 
     // Parse PDF content from buffer
     const pdfData = await pdfParse(req.file.buffer);
@@ -229,15 +249,25 @@ ${pdfText}`;
     const systemMessage = "You are a friendly but direct British CV expert. Write in simple, clear British English. Address the candidate by name. Be extremely specific about what needs changing and where. No vague suggestions - point to exact content and give clear fixes.";
 
     debug.log('Sending prompt to OpenAI:', { prompt: prompt.substring(0, 200) + '...' });
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
-      messages: [
-        { role: "system", content: systemMessage },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.3,
-      max_tokens: 1500
-    });
+
+    // Add timeout promise
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Operation timed out')), 54000)
+    );
+
+    // Race between the OpenAI call and timeout
+    const completion = await Promise.race([
+      openai.chat.completions.create({
+        model: "gpt-4-turbo-preview",
+        messages: [
+          { role: "system", content: systemMessage },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 1500
+      }),
+      timeoutPromise
+    ]);
 
     debug.log('Received response from OpenAI');
     const openAiResponse = completion.choices[0].message.content;
@@ -309,7 +339,15 @@ ${pdfText}`;
     debug.log('Review response sent to client');
   } catch (error) {
     debug.error('Error processing review:', error);
-    res.status(500).json({ error: error.message || 'An error occurred while processing the review' });
+    if (error.message === 'Operation timed out') {
+      res.status(504).json({ 
+        error: 'The operation took too long to complete. Please try again.' 
+      });
+    } else {
+      res.status(500).json({ 
+        error: error.message || 'An error occurred while processing the review' 
+      });
+    }
   }
 });
 
