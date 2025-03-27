@@ -1,28 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs').promises;
 const pdfParse = require('pdf-parse');
 const { openai, debug } = require('./config/openai');
 
-// Configure multer for file upload
-const storage = multer.diskStorage({
-  destination: async function (req, file, cb) {
-    const uploadDir = path.join(__dirname, 'uploads');
-    try {
-      await fs.mkdir(uploadDir, { recursive: true });
-      cb(null, uploadDir);
-    } catch (error) {
-      cb(error);
-    }
-  },
-  filename: function (req, file, cb) {
-    // Add timestamp to prevent filename conflicts
-    const timestamp = Date.now();
-    cb(null, `${timestamp}-${file.originalname}`);
-  }
-});
+// Configure multer for memory storage
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage: storage,
@@ -37,33 +20,22 @@ const upload = multer({
   }
 });
 
-// Helper function to clean up file
-async function cleanupFile(filePath) {
-  try {
-    if (filePath) {
-      await fs.unlink(filePath);
-      debug.log(`Cleaned up file: ${filePath}`);
-    }
-  } catch (error) {
-    debug.error(`Error cleaning up file: ${filePath}`, error);
-  }
-}
-
 // 1. Interview Preparation Feature
 router.post('/interview-prep', upload.single('file'), async (req, res) => {
   debug.log('Received interview prep request');
-  let filePath = null;
 
   try {
     if (!req.file) {
       throw new Error('No file uploaded');
     }
 
-    filePath = req.file.path;
-    debug.log('Processing file:', filePath);
+    debug.log('Processing file:', {
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      fileType: req.file.mimetype
+    });
 
-    const dataBuffer = await fs.readFile(filePath);
-    const pdfData = await pdfParse(dataBuffer);
+    const pdfData = await pdfParse(req.file.buffer);
     const pdfText = pdfData.text;
 
     if (!pdfText || pdfText.length === 0) {
@@ -109,11 +81,9 @@ ${pdfText}`;
       max_tokens: 2500
     });
 
-    await cleanupFile(filePath);
     res.json({ interviewPrep: completion.choices[0].message.content });
   } catch (error) {
     debug.error('Error in interview prep:', error);
-    await cleanupFile(filePath);
     res.status(500).json({ 
       error: 'Failed to generate interview preparation',
       details: error.message 
@@ -124,18 +94,19 @@ ${pdfText}`;
 // 2. Industry-Specific Optimization
 router.post('/industry-optimize', upload.single('file'), async (req, res) => {
   debug.log('Received industry optimization request');
-  let filePath = null;
 
   try {
     if (!req.file) {
       throw new Error('No file uploaded');
     }
 
-    filePath = req.file.path;
-    debug.log('Processing file:', filePath);
+    debug.log('Processing file:', {
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      fileType: req.file.mimetype
+    });
 
-    const dataBuffer = await fs.readFile(filePath);
-    const pdfData = await pdfParse(dataBuffer);
+    const pdfData = await pdfParse(req.file.buffer);
     const pdfText = pdfData.text;
 
     if (!pdfText || pdfText.length === 0) {
@@ -180,11 +151,9 @@ ${pdfText}`;
       max_tokens: 2000
     });
 
-    await cleanupFile(filePath);
     res.json({ industryOptimization: completion.choices[0].message.content });
   } catch (error) {
     debug.error('Error in industry optimization:', error);
-    await cleanupFile(filePath);
     res.status(500).json({ 
       error: 'Failed to generate industry optimization',
       details: error.message 
