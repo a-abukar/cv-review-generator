@@ -84,6 +84,9 @@ document.addEventListener('DOMContentLoaded', () => {
           throw new Error(result.error);
         }
   
+        // Hide loading state before updating content
+        hideLoadingState();
+  
         if (result.contentReview && result.designReview) {
           console.log('Received separate review sections');
           contentReviewElement.innerHTML = renderMarkdown(result.contentReview);
@@ -113,8 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
     .catch(error => {
         console.error('Error in review processing:', error);
         const errorMessage = error.message || 'An error occurred while generating the review.';
-        contentReviewElement.innerHTML = `<div class="error-message">Error: ${errorMessage}</div>`;
-        designReviewElement.innerHTML = `<div class="error-message">Error: ${errorMessage}</div>`;
+        showError(errorMessage);
       });
   
     // Function to call our backend API to generate a CV review
@@ -606,37 +608,41 @@ document.addEventListener('DOMContentLoaded', () => {
       return document.getElementById('contentReview').innerText;
   }
 
+  // Function to show loading state
   function showLoadingState(message) {
-    const loadingDiv = document.getElementById('loadingState');
-    if (!loadingDiv) {
-      const div = document.createElement('div');
-      div.id = 'loadingState';
-      div.className = 'loading-state';
-      div.innerHTML = `
+    const contentReviewElement = document.getElementById('contentReview');
+    const designReviewElement = document.getElementById('designReview');
+    
+    contentReviewElement.innerHTML = `
+      <div class="loading-container">
         <div class="loading-spinner"></div>
-        <p class="loading-message">${message}</p>
-        <p class="loading-submessage">This may take up to 5 minutes...</p>
-      `;
-      document.body.appendChild(div);
-    } else {
-      loadingDiv.querySelector('.loading-message').textContent = message;
-    }
+        <p>${message}</p>
+      </div>
+    `;
+    
+    designReviewElement.innerHTML = `
+      <div class="loading-container">
+        <div class="loading-spinner"></div>
+        <p>${message}</p>
+      </div>
+    `;
   }
 
+  // Function to hide loading state
   function hideLoadingState() {
-    const loadingDiv = document.getElementById('loadingState');
-    if (loadingDiv) {
-      loadingDiv.remove();
-    }
+    const contentReviewElement = document.getElementById('contentReview');
+    const designReviewElement = document.getElementById('designReview');
+    
+    contentReviewElement.innerHTML = '';
+    designReviewElement.innerHTML = '';
   }
 
+  // Function to show error message
   function showError(message) {
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error-message';
-    errorDiv.textContent = message;
-    document.body.appendChild(errorDiv);
-    setTimeout(() => {
-      errorDiv.remove();
-    }, 5000);
+    const contentReviewElement = document.getElementById('contentReview');
+    const designReviewElement = document.getElementById('designReview');
+    
+    contentReviewElement.innerHTML = `<div class="error-message">${message}</div>`;
+    designReviewElement.innerHTML = `<div class="error-message">${message}</div>`;
   }
 });
