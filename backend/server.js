@@ -109,23 +109,6 @@ app.use((req, res, next) => {
 // Apply rate limiter to OpenAI endpoints
 app.use('/api/chatgpt/review-summary', openAILimiter);
 
-// Add timeout middleware
-const timeout = (seconds) => {
-  const ms = seconds * 1000;
-  return (req, res, next) => {
-    res.setTimeout(ms, () => {
-      res.status(504).json({
-        error: 'Request timeout - The operation took too long to complete'
-      });
-    });
-    next();
-  };
-};
-
-// Apply timeout middleware to review endpoints
-app.use('/api/review', timeout(55)); // 55 seconds timeout
-app.use('/api/chatgpt/review-summary', timeout(55));
-
 debug.log('Middleware configured');
 
 // Function to truncate text to a maximum length
@@ -256,24 +239,16 @@ ${truncatedText}`;
 
     debug.log('Sending prompt to OpenAI');
 
-    // Add timeout promise
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Operation timed out')), 280000)
-    );
-
-    // Race between the OpenAI call and timeout
-    const completion = await Promise.race([
-      openai.chat.completions.create({
-        model: "gpt-4-turbo-preview",
-        messages: [
-          { role: "system", content: systemMessage },
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.3,
-        max_tokens: 800 // Reduced from 1500
-      }),
-      timeoutPromise
-    ]);
+    // Call OpenAI API with a shorter timeout
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-turbo-preview",
+      messages: [
+        { role: "system", content: systemMessage },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.3,
+      max_tokens: 800 // Reduced from 1500
+    });
 
     debug.log('Received response from OpenAI');
     const openAiResponse = completion.choices[0].message.content;
@@ -328,19 +303,13 @@ ${truncatedText}`;
     const { contentReview, designReview } = extractReviews(openAiResponse);
 
     // Send response immediately
-    res.status(200).json({ contentReview, designReview });
+    res.json({ contentReview, designReview });
     debug.log('Review response sent to client');
   } catch (error) {
     debug.error('Error processing review:', error);
-    if (error.message === 'Operation timed out') {
-      res.status(504).json({ 
-        error: 'The operation took too long to complete. Please try again.' 
-      });
-    } else {
-      res.status(500).json({ 
-        error: error.message || 'An error occurred while processing the review' 
-      });
-    }
+    res.status(500).json({ 
+      error: error.message || 'An error occurred while processing the review' 
+    });
   }
 });
 
