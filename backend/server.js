@@ -183,7 +183,7 @@ app.post('/api/review', upload.single('file'), async (req, res) => {
 ### Content Review:
 Hi [Person's Name], here's what needs work in your CV content:
 
-1. Profile (currently [X] lines, needs to be 3-4):
+1. Profile (currently [X] lines, needs to be 5 lines max):
    - Your current profile: "[quote exact profile]"
    - Here's what to change: [specific changes]
 
@@ -208,14 +208,14 @@ Hi [Person's Name], here's what needs work in your CV content:
 Now, let's fix your CV's design:
 
 1. Layout:
-   - Font size: [list sections with small fonts]
+   - Font size: [list specific sections with small fonts]
    - Contrast: [mention specific low-contrast areas]
-   - Skills format: Change from [current format] to bubbles
+   - Skills format: Change from [current format] to bubbles if not already bubbbles - if it is already, then tell them that's good
    - Spacing: Add [X]pt space between [specific sections]
 
 2. Bullet Points:
-   - Multi-line bullets to fix: [quote each one]
-   - Current counts: [list exact counts per role]
+   - Multi-line bullets to fix: [quote each one exactly as it is in the CV]
+   - Current bullet point count: [list exact counts per role]
    - Required: 12 for current role, 6-8 for others
 
 3. Missing Design Elements:
@@ -238,8 +238,8 @@ ${truncatedText}`;
         { role: "system", content: systemMessage },
         { role: "user", content: prompt }
       ],
-      temperature: 0.3,
-      max_tokens: 800
+      temperature: 0.2,
+      max_tokens: 2000
     });
 
     debug.log('Received response from OpenAI');

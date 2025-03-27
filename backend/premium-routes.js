@@ -63,7 +63,7 @@ router.post('/interview-prep', upload.single('file'), async (req, res) => {
     // Truncate text to reduce processing time
     const truncatedText = pdfText.slice(0, 1000);
 
-    const prompt = `Based on this CV, create an extremely detailed, personalised interview preparation guide, based on DevOps technologies. Focus on:
+    const prompt = `Based on this CV, create an extremely detailed, personalised interview preparation guide, based on DevOps technologies WITH ANSWERS. Focus on:
 
 1. Technical Questions (5):
    - Create questions based on the DevOps technologies in their CV: ${truncatedText.match(/\b(?:Python|Java|JavaScript|React|Node|AWS|Docker|Kubernetes|etc)\b/g)?.join(', ')}
@@ -98,8 +98,8 @@ ${truncatedText}`;
         },
         { role: "user", content: prompt }
       ],
-      temperature: 0.7,
-      max_tokens: 1500
+      temperature: 0.3,
+      max_tokens: 2000
     });
 
     res.json({ interviewPrep: completion.choices[0].message.content });
