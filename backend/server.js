@@ -177,11 +177,15 @@ app.post('/api/review', upload.single('file'), async (req, res) => {
       hasFile: !!req.file,
       fileSize: req.file?.size,
       fileType: req.file?.mimetype,
-      headers: req.headers
+      headers: req.headers,
+      body: req.body
     });
 
     if (!req.file) {
-      debug.error('No file uploaded');
+      debug.error('No file uploaded. Request details:', {
+        headers: req.headers,
+        body: req.body
+      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
 

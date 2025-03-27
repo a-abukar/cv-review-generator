@@ -161,7 +161,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const response = await fetch(`${config.apiUrl}/api/review`, {
           method: 'POST',
-          body: formData
+          body: formData,
+          // Remove Content-Type header to let browser set it with boundary
         });
 
         let result;
