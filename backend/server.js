@@ -196,7 +196,7 @@ app.post('/api/review', upload.single('file'), async (req, res) => {
 
     // Parse PDF content from buffer with minimal settings
     const pdfData = await pdfParse(req.file.buffer, {
-      max: 2, // Only parse first 2 pages
+      max: 1, // Only parse first page
       pagerender: render_page
     });
     
@@ -204,7 +204,7 @@ app.post('/api/review', upload.single('file'), async (req, res) => {
     debug.log('PDF text extracted, length:', pdfText.length);
 
     // Truncate text to reduce processing time
-    const truncatedText = truncateText(pdfText, 2000);
+    const truncatedText = truncateText(pdfText, 1000); // Reduced to 1000 characters
 
     const prompt = `Review this CV in simple, direct British English. Address the candidate directly and be specific about what needs changing.
 
@@ -273,7 +273,7 @@ ${truncatedText}`;
           { role: "user", content: prompt }
         ],
         temperature: 0.3,
-        max_tokens: 1500
+        max_tokens: 800 // Reduced from 1500
       }),
       timeoutPromise
     ]);
