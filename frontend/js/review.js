@@ -253,30 +253,10 @@ document.addEventListener('DOMContentLoaded', () => {
           body: formData
         });
   
-        let result;
-        try {
-          result = await response.json();
-        } catch (e) {
-          console.error('Error parsing response:', e);
-          if (response.status === 504) {
-            throw new Error('The interview prep is taking longer than expected. Please try again in a few moments.');
-          } else if (response.status === 500) {
-            throw new Error('Server error occurred. Please try again later.');
-          } else {
-            throw new Error('Failed to process the response. Please try again.');
-          }
-        }
-  
+        const result = await response.json();
+        
         if (!response.ok) {
-          if (response.status === 504) {
-            throw new Error('The interview prep is taking longer than expected. Please try again in a few moments.');
-          } else if (result.error) {
-            throw new Error(result.error);
-          } else if (result.details) {
-            throw new Error(result.details);
-          } else {
-            throw new Error('Failed to generate interview preparation');
-          }
+          throw new Error(result.error || 'Failed to generate interview preparation');
         }
   
         // Create a new section for interview prep
@@ -296,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
       } catch (error) {
         console.error('Error generating interview prep:', error);
-        alert(error.message || 'Failed to generate interview preparation. Please try again.');
+        alert('Failed to generate interview preparation. Please try again.');
       } finally {
         // Reset button state
         interviewPrepBtn.disabled = false;

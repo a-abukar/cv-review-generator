@@ -1,11 +1,28 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs').promises;
 const pdfParse = require('pdf-parse');
 const { openai, debug } = require('./config/openai');
 
-// Configure multer for memory storage
-const storage = multer.memoryStorage();
+// Configure multer for file upload
+const storage = multer.diskStorage({
+  destination: async function (req, file, cb) {
+    const uploadDir = path.join(__dirname, 'uploads');
+    try {
+      await fs.mkdir(uploadDir, { recursive: true });
+      cb(null, uploadDir);
+    } catch (error) {
+      cb(error);
+    }
+  },
+  filename: function (req, file, cb) {
+    // Add timestamp to prevent filename conflicts
+    const timestamp = Date.now();
+    cb(null, `${timestamp}-${file.originalname}`);
+  }
+});
 
 const upload = multer({
   storage: storage,
@@ -20,115 +37,83 @@ const upload = multer({
   }
 });
 
-// Function to safely extract text from PDF
-async function extractPDFText(buffer) {
+// Helper function to clean up file
+async function cleanupFile(filePath) {
   try {
-    const pdfData = await pdfParse(buffer, {
-      max: 1, // Only parse first page
-      pagerender: function(pageData) {
-        return pageData.getTextContent()
-          .then(function(textContent) {
-            let lastY, text = '';
-            for (let item of textContent.items) {
-              if (lastY != item.transform[5] && text) {
-                text += '\n';
-              }
-              text += item.str;
-              lastY = item.transform[5];
-            }
-            return text;
-          });
-      }
-    });
-    
-    return pdfData.text || '';
+    if (filePath) {
+      await fs.unlink(filePath);
+      debug.log(`Cleaned up file: ${filePath}`);
+    }
   } catch (error) {
-    debug.error('Error extracting PDF text:', error);
-    throw new Error('Failed to extract text from PDF');
+    debug.error(`Error cleaning up file: ${filePath}`, error);
   }
-}
-
-// Function to truncate text to a maximum length
-function truncateText(text, maxLength = 4000) {
-  if (!text) return '';
-  if (text.length <= maxLength) return text;
-  return text.substring(0, maxLength) + '...';
 }
 
 // 1. Interview Preparation Feature
 router.post('/interview-prep', upload.single('file'), async (req, res) => {
   debug.log('Received interview prep request');
+  let filePath = null;
 
   try {
     if (!req.file) {
       throw new Error('No file uploaded');
     }
 
-    debug.log('Processing file:', {
-      fileName: req.file.originalname,
-      fileSize: req.file.size,
-      fileType: req.file.mimetype
-    });
+    filePath = req.file.path;
+    debug.log('Processing file:', filePath);
 
-    // Extract text from PDF
-    const pdfText = await extractPDFText(req.file.buffer);
-    debug.log('PDF text extracted, length:', pdfText.length);
+    const dataBuffer = await fs.readFile(filePath);
+    const pdfData = await pdfParse(dataBuffer);
+    const pdfText = pdfData.text;
 
     if (!pdfText || pdfText.length === 0) {
       throw new Error('Failed to extract text from PDF');
     }
 
-    // Truncate text to reduce processing time
-    const truncatedText = truncateText(pdfText, 1000);
+    const prompt = `Based on this CV, create a personalized interview preparation guide. Focus on:
 
-    // Extract technologies and experience
-    const technologies = truncatedText.match(/\b(?:Docker|Kubernetes|AWS|CI/CD|Jenkins|Git|Terraform|Ansible|Linux|Shell|Infrastructure|DevOps|Cloud)\b/g) || [];
-    const experience = truncatedText.match(/(?<=• ).*$/gm)?.slice(0, 3) || [];
-
-    const prompt = `Based on this CV, create a personalised interview preparation guide focused on DevOps and infrastructure roles. Focus on:
-
-1. Technical Questions (4):
-   - Create questions based on the DevOps technologies in their CV: ${technologies.join(', ')}
+1. Technical Questions (10):
+   - Create questions based on the technologies in their CV: ${pdfText.match(/\b(?:Python|Java|JavaScript|React|Node|AWS|Docker|Kubernetes|etc)\b/g)?.join(', ')}
    - Include both basic concepts and advanced scenarios
-   - Focus on infrastructure, automation, and cloud technologies
-   - Provide detailed example answers with practical examples
+   - Provide detailed example answers with code snippets where relevant
 
-2. Experience Deep-Dive (4):
-   - Create questions based on their specific DevOps projects and roles
-   - Focus on: ${experience.join(', ')}
-   - Include system architecture and infrastructure design questions
+2. Experience Deep-Dive (5):
+   - Create questions based on their specific projects and roles
+   - Focus on: ${pdfText.match(/(?<=• ).*$/gm)?.slice(0, 3).join(', ')}
+   - Include system design and architecture questions
    - Provide STAR method response templates
 
-3. DevOps Scenarios (4):
+3. Behavioral Scenarios (5):
    - Based on their role and experience level
-   - Include infrastructure scaling and automation scenarios
-   - Focus on CI/CD pipeline challenges
+   - Include conflict resolution and leadership scenarios
    - Provide structured response frameworks
 
 4. Company Research Guide:
-   - DevOps industry trends relevant to their experience
+   - Industry trends relevant to their experience
    - Salary range analysis: £[range] based on experience
-   - Questions to ask about their DevOps practices
+   - Questions to ask interviewers
 
 CV Content:
-${truncatedText}`;
+${pdfText}`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
       messages: [
         { 
           role: "system", 
-          content: "You are an expert DevOps interviewer and technical recruiter. Create specific, detailed interview questions and guidance based on the candidate's actual DevOps experience. Use British English and be direct and practical. Focus on infrastructure, automation, and cloud technologies." 
+          content: "You are an expert technical interviewer and career coach. Create specific, detailed interview questions and guidance based on the candidate's actual experience. Use British English and be direct and practical." 
         },
         { role: "user", content: prompt }
       ],
       temperature: 0.7,
-      max_tokens: 1500
+      max_tokens: 2500
     });
 
+    await cleanupFile(filePath);
     res.json({ interviewPrep: completion.choices[0].message.content });
   } catch (error) {
     debug.error('Error in interview prep:', error);
+    await cleanupFile(filePath);
     res.status(500).json({ 
       error: 'Failed to generate interview preparation',
       details: error.message 
@@ -139,30 +124,25 @@ ${truncatedText}`;
 // 2. Industry-Specific Optimization
 router.post('/industry-optimize', upload.single('file'), async (req, res) => {
   debug.log('Received industry optimization request');
+  let filePath = null;
 
   try {
     if (!req.file) {
       throw new Error('No file uploaded');
     }
 
-    debug.log('Processing file:', {
-      fileName: req.file.originalname,
-      fileSize: req.file.size,
-      fileType: req.file.mimetype
-    });
+    filePath = req.file.path;
+    debug.log('Processing file:', filePath);
 
-    // Extract text from PDF
-    const pdfText = await extractPDFText(req.file.buffer);
-    debug.log('PDF text extracted, length:', pdfText.length);
+    const dataBuffer = await fs.readFile(filePath);
+    const pdfData = await pdfParse(dataBuffer);
+    const pdfText = pdfData.text;
 
     if (!pdfText || pdfText.length === 0) {
       throw new Error('Failed to extract text from PDF');
     }
 
-    // Truncate text to reduce processing time
-    const truncatedText = truncateText(pdfText, 1000);
-
-    const prompt = `Based on this CV, provide a comprehensive industry optimisation analysis. Include:
+    const prompt = `Based on this CV, provide a comprehensive industry optimization analysis. Include:
 
 1. Skills Gap Analysis:
    - Compare current skills with industry demands
@@ -185,7 +165,7 @@ router.post('/industry-optimize', upload.single('file'), async (req, res) => {
    - Areas for differentiation
 
 CV Content:
-${truncatedText}`;
+${pdfText}`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
@@ -200,9 +180,11 @@ ${truncatedText}`;
       max_tokens: 2000
     });
 
+    await cleanupFile(filePath);
     res.json({ industryOptimization: completion.choices[0].message.content });
   } catch (error) {
     debug.error('Error in industry optimization:', error);
+    await cleanupFile(filePath);
     res.status(500).json({ 
       error: 'Failed to generate industry optimization',
       details: error.message 
