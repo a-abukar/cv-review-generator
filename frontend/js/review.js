@@ -400,19 +400,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Call ChatGPT API to analyze the review and generate summary
         const response = await fetch(`${config.apiUrl}/api/chatgpt/review-summary`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
             contentReview: cleanContent,
             designReview: cleanDesign
-          })
-        });
+        })
+      });
 
         const result = await response.json();
-        
-        if (!response.ok) {
+
+      if (!response.ok) {
           // Handle rate limiting response
           if (response.status === 429 && result.nextAvailableTime) {
             localStorage.setItem('nextReviewSummaryTime', result.nextAvailableTime);

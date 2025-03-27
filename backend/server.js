@@ -191,9 +191,6 @@ app.post('/api/review', upload.single('file'), async (req, res) => {
 
     debug.log('File received in memory, size:', req.file.size);
 
-    // Set a longer timeout for the response
-    res.setTimeout(290000); // 290 seconds
-
     // Parse PDF content from buffer with minimal settings
     const pdfData = await pdfParse(req.file.buffer, {
       max: 1, // Only parse first page
@@ -330,16 +327,8 @@ ${truncatedText}`;
     // Extract the reviews
     const { contentReview, designReview } = extractReviews(openAiResponse);
 
-    // Send response in chunks to avoid timeout
-    res.writeHead(200, {
-      'Content-Type': 'application/json',
-      'Transfer-Encoding': 'chunked'
-    });
-
-    // Send the response in chunks
-    res.write(JSON.stringify({ contentReview, designReview }));
-    res.end();
-
+    // Send response immediately
+    res.status(200).json({ contentReview, designReview });
     debug.log('Review response sent to client');
   } catch (error) {
     debug.error('Error processing review:', error);
