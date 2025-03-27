@@ -118,45 +118,11 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   
     // Function to call our backend API to generate a CV review
-    async function getCVReview(fileName) {
+    async function getCVReview(file) {
       try {
-        // Get the base64 string from localStorage
-        const base64String = localStorage.getItem('uploadedFile');
-        if (!base64String) {
-          throw new Error('No file found in localStorage');
-        }
-        console.log('getCVReview: Found file in localStorage, length:', base64String.length);
-  
-        // Convert base64 to blob
-        const base64Data = base64String.split(',')[1];
-        const byteCharacters = atob(base64Data);
-        const byteArrays = [];
-        
-        for (let offset = 0; offset < byteCharacters.length; offset += 1024) {
-          const slice = byteCharacters.slice(offset, offset + 1024);
-          const byteNumbers = new Array(slice.length);
-          
-          for (let i = 0; i < slice.length; i++) {
-            byteNumbers[i] = slice.charCodeAt(i);
-          }
-          
-          const byteArray = new Uint8Array(byteNumbers);
-          byteArrays.push(byteArray);
-        }
-        
-        const blob = new Blob(byteArrays, { type: 'application/pdf' });
-        const file = new File([blob], fileName, { type: 'application/pdf' });
-  
-        console.log('Sending file to backend:', {
-          fileName,
-          fileSize: file.size,
-          fileType: file.type
-        });
-  
-        // Create FormData and append the file
         const formData = new FormData();
         formData.append('file', file);
-  
+
         showLoadingState('Analyzing your CV...');
         
         const response = await fetch(`${config.apiUrl}/api/review`, {
@@ -164,8 +130,19 @@ document.addEventListener('DOMContentLoaded', () => {
           body: formData
         });
 
+        let result;
+        try {
+          result = await response.json();
+        } catch (e) {
+          // If response is not JSON, it's likely a timeout or server error
+          if (response.status === 504) {
+            throw new Error('The review is taking longer than expected. Please try again in a few moments.');
+          } else {
+            throw new Error('Server error. Please try again later.');
+          }
+        }
+
         if (!response.ok) {
-          const result = await response.json();
           if (response.status === 504) {
             throw new Error('The review is taking longer than expected. Please try again in a few moments.');
           } else if (result.error) {
@@ -175,12 +152,10 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
 
-        const result = await response.json();
         if (!result.contentReview || !result.designReview) {
           throw new Error('Invalid response format from server');
         }
 
-        console.log('Received response from backend:', result);
         return result;
       } catch (error) {
         console.error('Error in getCVReview:', error);
@@ -605,7 +580,7 @@ document.addEventListener('DOMContentLoaded', () => {
       div.innerHTML = `
         <div class="loading-spinner"></div>
         <p class="loading-message">${message}</p>
-        <p class="loading-submessage">This may take up to a minute...</p>
+        <p class="loading-submessage">This may take up to 5 minutes...</p>
       `;
       document.body.appendChild(div);
     } else {
@@ -627,6 +602,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.appendChild(errorDiv);
     setTimeout(() => {
       errorDiv.remove();
-    }, 3000);
+    }, 5000);
   }
 });

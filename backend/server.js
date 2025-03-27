@@ -182,30 +182,18 @@ app.post('/api/review', upload.single('file'), async (req, res) => {
     // Set a longer timeout for the response
     res.setTimeout(290000); // 290 seconds
 
-    // Parse PDF content from buffer with optimized settings
+    // Parse PDF content from buffer with minimal settings
     const pdfData = await pdfParse(req.file.buffer, {
-      max: 5, // Only parse first 5 pages
-      pagerender: render_page // Custom render function
+      max: 2, // Only parse first 2 pages
+      pagerender: render_page
     });
     
     const pdfText = pdfData.text;
     debug.log('PDF text extracted, length:', pdfText.length);
 
-    // Extract visual information with timeout
-    let visualInfo = {};
-    try {
-      const pdfDoc = await Promise.race([
-        pdfjsLib.getDocument({ data: req.file.buffer }).promise,
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('PDF parsing timeout')), 30000)
-        )
-      ]);
-      visualInfo = await extractVisualInfo(pdfDoc);
-    } catch (error) {
-      debug.error('Error extracting visual information:', error);
-    }
+    // Truncate text to reduce processing time
+    const truncatedText = truncateText(pdfText, 2000);
 
-    const truncatedText = truncateText(pdfText, 3000); // Reduce max length
     const prompt = `Review this CV in simple, direct British English. Address the candidate directly and be specific about what needs changing.
 
 ### Content Review:
