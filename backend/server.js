@@ -233,13 +233,13 @@ ${truncatedText}`;
 
     // Call OpenAI API with a shorter timeout
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt-3.5-turbo-0125",
       messages: [
         { role: "system", content: systemMessage },
         { role: "user", content: prompt }
       ],
       temperature: 0.3,
-      max_tokens: 800 // Reduced from 1500
+      max_tokens: 800
     });
 
     debug.log('Received response from OpenAI');
@@ -365,7 +365,7 @@ CV Content:
 ${pdfText}`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt-3.5-turbo-0125",
       messages: [
         { 
           role: "system", 
@@ -487,7 +487,7 @@ app.post('/api/chatgpt/review-summary', async (req, res) => {
     
     // Call ChatGPT API
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt-3.5-turbo-0125",
       messages: [
         {
           role: "system",

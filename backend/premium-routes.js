@@ -90,7 +90,7 @@ CV Content:
 ${truncatedText}`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt-3.5-turbo-0125",
       messages: [
         { 
           role: "system", 
@@ -99,7 +99,7 @@ ${truncatedText}`;
         { role: "user", content: prompt }
       ],
       temperature: 0.7,
-      max_tokens: 1500 // Reduced from 2500
+      max_tokens: 1500
     });
 
     res.json({ interviewPrep: completion.choices[0].message.content });
@@ -160,7 +160,7 @@ CV Content:
 ${pdfText}`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt-3.5-turbo-0125",
       messages: [
         { 
           role: "system", 
