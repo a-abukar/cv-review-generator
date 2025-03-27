@@ -65,18 +65,18 @@ router.post('/interview-prep', upload.single('file'), async (req, res) => {
 
     const prompt = `Based on this CV, create a personalized interview preparation guide. Focus on:
 
-1. Technical Questions (10):
-   - Create questions based on the technologies in their CV: ${truncatedText.match(/\b(?:Python|Java|JavaScript|React|Node|AWS|Docker|Kubernetes|etc)\b/g)?.join(', ')}
+1. Technical Questions (5):
+   - Create questions based on the DevOps technologies in their CV: ${truncatedText.match(/\b(?:Python|Java|JavaScript|React|Node|AWS|Docker|Kubernetes|etc)\b/g)?.join(', ')}
    - Include both basic concepts and advanced scenarios
    - Provide detailed example answers with code snippets where relevant
 
-2. Experience Deep-Dive (5):
+2. Experience Deep-Dive (4):
    - Create questions based on their specific projects and roles
    - Focus on: ${truncatedText.match(/(?<=• ).*$/gm)?.slice(0, 3).join(', ')}
    - Include system design and architecture questions
    - Provide STAR method response templates
 
-3. Behavioral Scenarios (5):
+3. Behavioral Scenarios (3):
    - Based on their role and experience level
    - Include conflict resolution and leadership scenarios
    - Provide structured response frameworks
