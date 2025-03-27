@@ -38,7 +38,20 @@ router.post('/interview-prep', upload.single('file'), async (req, res) => {
     // Parse PDF with minimal settings
     const pdfData = await pdfParse(req.file.buffer, {
       max: 1, // Only parse first page
-      pagerender: render_page
+      pagerender: function(pageData) {
+        return pageData.getTextContent()
+          .then(function(textContent) {
+            let lastY, text = '';
+            for (let item of textContent.items) {
+              if (lastY != item.transform[5] && text) {
+                text += '\n';
+              }
+              text += item.str;
+              lastY = item.transform[5];
+            }
+            return text;
+          });
+      }
     });
     
     const pdfText = pdfData.text;
