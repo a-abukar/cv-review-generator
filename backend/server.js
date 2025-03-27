@@ -159,20 +159,12 @@ app.post('/api/review', upload.single('file'), async (req, res) => {
     debug.log('Received request:', {
       hasFile: !!req.file,
       fileSize: req.file?.size,
-      fileType: req.file?.mimetype,
-      headers: req.headers,
-      body: req.body
+      fileType: req.file?.mimetype
     });
 
     if (!req.file) {
-      debug.error('No file uploaded. Request details:', {
-        headers: req.headers,
-        body: req.body
-      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
-
-    debug.log('File received in memory, size:', req.file.size);
 
     // Parse PDF content from buffer with minimal settings
     const pdfData = await pdfParse(req.file.buffer, {
