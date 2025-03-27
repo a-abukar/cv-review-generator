@@ -330,7 +330,16 @@ ${truncatedText}`;
     // Extract the reviews
     const { contentReview, designReview } = extractReviews(openAiResponse);
 
-    res.json({ contentReview, designReview });
+    // Send response in chunks to avoid timeout
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Transfer-Encoding': 'chunked'
+    });
+
+    // Send the response in chunks
+    res.write(JSON.stringify({ contentReview, designReview }));
+    res.end();
+
     debug.log('Review response sent to client');
   } catch (error) {
     debug.error('Error processing review:', error);
