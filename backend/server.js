@@ -86,25 +86,15 @@ app.use('/api/premium', premiumRoutes);
 
 // Function to truncate text to a maximum length
 function truncateText(text, maxLength = 4000) {
+  if (!text) return '';
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength) + '...';
 }
 
-// CV Review endpoint using file upload
-app.post('/api/review', upload.single('file'), async (req, res) => {
+// Function to safely extract text from PDF
+async function extractPDFText(buffer) {
   try {
-    debug.log('Received request:', {
-      hasFile: !!req.file,
-      fileSize: req.file?.size,
-      fileType: req.file?.mimetype
-    });
-
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-
-    // Parse PDF content from buffer with minimal settings
-    const pdfData = await pdfParse(req.file.buffer, {
+    const pdfData = await pdfParse(buffer, {
       max: 1, // Only parse first page
       pagerender: function(pageData) {
         return pageData.getTextContent()
@@ -122,7 +112,28 @@ app.post('/api/review', upload.single('file'), async (req, res) => {
       }
     });
     
-    const pdfText = pdfData.text;
+    return pdfData.text || '';
+  } catch (error) {
+    debug.error('Error extracting PDF text:', error);
+    throw new Error('Failed to extract text from PDF');
+  }
+}
+
+// CV Review endpoint using file upload
+app.post('/api/review', upload.single('file'), async (req, res) => {
+  try {
+    debug.log('Received request:', {
+      hasFile: !!req.file,
+      fileSize: req.file?.size,
+      fileType: req.file?.mimetype
+    });
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Extract text from PDF
+    const pdfText = await extractPDFText(req.file.buffer);
     debug.log('PDF text extracted, length:', pdfText.length);
 
     if (!pdfText || pdfText.length === 0) {

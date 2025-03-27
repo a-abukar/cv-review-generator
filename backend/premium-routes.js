@@ -20,23 +20,10 @@ const upload = multer({
   }
 });
 
-// 1. Interview Preparation Feature
-router.post('/interview-prep', upload.single('file'), async (req, res) => {
-  debug.log('Received interview prep request');
-
+// Function to safely extract text from PDF
+async function extractPDFText(buffer) {
   try {
-    if (!req.file) {
-      throw new Error('No file uploaded');
-    }
-
-    debug.log('Processing file:', {
-      fileName: req.file.originalname,
-      fileSize: req.file.size,
-      fileType: req.file.mimetype
-    });
-
-    // Parse PDF with minimal settings
-    const pdfData = await pdfParse(req.file.buffer, {
+    const pdfData = await pdfParse(buffer, {
       max: 1, // Only parse first page
       pagerender: function(pageData) {
         return pageData.getTextContent()
@@ -54,26 +41,61 @@ router.post('/interview-prep', upload.single('file'), async (req, res) => {
       }
     });
     
-    const pdfText = pdfData.text;
+    return pdfData.text || '';
+  } catch (error) {
+    debug.error('Error extracting PDF text:', error);
+    throw new Error('Failed to extract text from PDF');
+  }
+}
+
+// Function to truncate text to a maximum length
+function truncateText(text, maxLength = 4000) {
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+}
+
+// 1. Interview Preparation Feature
+router.post('/interview-prep', upload.single('file'), async (req, res) => {
+  debug.log('Received interview prep request');
+
+  try {
+    if (!req.file) {
+      throw new Error('No file uploaded');
+    }
+
+    debug.log('Processing file:', {
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      fileType: req.file.mimetype
+    });
+
+    // Extract text from PDF
+    const pdfText = await extractPDFText(req.file.buffer);
+    debug.log('PDF text extracted, length:', pdfText.length);
 
     if (!pdfText || pdfText.length === 0) {
       throw new Error('Failed to extract text from PDF');
     }
 
     // Truncate text to reduce processing time
-    const truncatedText = pdfText.slice(0, 1000);
+    const truncatedText = truncateText(pdfText, 1000);
+
+    // Extract technologies and experience
+    const technologies = truncatedText.match(/\b(?:Docker|Kubernetes|AWS|CI/CD|Jenkins|Git|Terraform|Ansible|Linux|Shell|Infrastructure|DevOps|Cloud)\b/g) || [];
+    const experience = truncatedText.match(/(?<=• ).*$/gm)?.slice(0, 3) || [];
 
     const prompt = `Based on this CV, create a personalised interview preparation guide focused on DevOps and infrastructure roles. Focus on:
 
 1. Technical Questions (4):
-   - Create questions based on the DevOps technologies in their CV: ${truncatedText.match(/\b(?:Docker|Kubernetes|AWS|CI/CD|Jenkins|Git|Terraform|Ansible|Linux|Shell|Infrastructure|DevOps|Cloud)\b/g)?.join(', ')}
+   - Create questions based on the DevOps technologies in their CV: ${technologies.join(', ')}
    - Include both basic concepts and advanced scenarios
    - Focus on infrastructure, automation, and cloud technologies
    - Provide detailed example answers with practical examples
 
 2. Experience Deep-Dive (4):
    - Create questions based on their specific DevOps projects and roles
-   - Focus on: ${truncatedText.match(/(?<=• ).*$/gm)?.slice(0, 3).join(', ')}
+   - Focus on: ${experience.join(', ')}
    - Include system architecture and infrastructure design questions
    - Provide STAR method response templates
 
@@ -129,33 +151,16 @@ router.post('/industry-optimize', upload.single('file'), async (req, res) => {
       fileType: req.file.mimetype
     });
 
-    // Parse PDF with minimal settings
-    const pdfData = await pdfParse(req.file.buffer, {
-      max: 1, // Only parse first page
-      pagerender: function(pageData) {
-        return pageData.getTextContent()
-          .then(function(textContent) {
-            let lastY, text = '';
-            for (let item of textContent.items) {
-              if (lastY != item.transform[5] && text) {
-                text += '\n';
-              }
-              text += item.str;
-              lastY = item.transform[5];
-            }
-            return text;
-          });
-      }
-    });
-    
-    const pdfText = pdfData.text;
+    // Extract text from PDF
+    const pdfText = await extractPDFText(req.file.buffer);
+    debug.log('PDF text extracted, length:', pdfText.length);
 
     if (!pdfText || pdfText.length === 0) {
       throw new Error('Failed to extract text from PDF');
     }
 
     // Truncate text to reduce processing time
-    const truncatedText = pdfText.slice(0, 1000);
+    const truncatedText = truncateText(pdfText, 1000);
 
     const prompt = `Based on this CV, provide a comprehensive industry optimisation analysis. Include:
 
