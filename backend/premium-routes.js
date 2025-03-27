@@ -63,28 +63,30 @@ router.post('/interview-prep', upload.single('file'), async (req, res) => {
     // Truncate text to reduce processing time
     const truncatedText = pdfText.slice(0, 1000);
 
-    const prompt = `Based on this CV, create a personalized interview preparation guide. Focus on:
+    const prompt = `Based on this CV, create a personalised interview preparation guide focused on DevOps and infrastructure roles. Focus on:
 
-1. Technical Questions (10):
-   - Create questions based on the technologies in their CV: ${truncatedText.match(/\b(?:Python|Java|JavaScript|React|Node|AWS|Docker|Kubernetes|etc)\b/g)?.join(', ')}
+1. Technical Questions (4)):
+   - Create questions based on the DevOps technologies in their CV: ${truncatedText.match(/\b(?:Docker|Kubernetes|AWS|CI/CD|Jenkins|Git|Terraform|Ansible|Linux|Shell|Infrastructure|DevOps|Cloud)\b/g)?.join(', ')}
    - Include both basic concepts and advanced scenarios
-   - Provide detailed example answers with code snippets where relevant
+   - Focus on infrastructure, automation, and cloud technologies
+   - Provide detailed example answers with practical examples
 
-2. Experience Deep-Dive (5):
-   - Create questions based on their specific projects and roles
+2. Experience Deep-Dive (4):
+   - Create questions based on their specific DevOps projects and roles
    - Focus on: ${truncatedText.match(/(?<=• ).*$/gm)?.slice(0, 3).join(', ')}
-   - Include system design and architecture questions
+   - Include system architecture and infrastructure design questions
    - Provide STAR method response templates
 
-3. Behavioral Scenarios (5):
+3. DevOps Scenarios (4):
    - Based on their role and experience level
-   - Include conflict resolution and leadership scenarios
+   - Include infrastructure scaling and automation scenarios
+   - Focus on CI/CD pipeline challenges
    - Provide structured response frameworks
 
 4. Company Research Guide:
-   - Industry trends relevant to their experience
+   - DevOps industry trends relevant to their experience
    - Salary range analysis: £[range] based on experience
-   - Questions to ask interviewers
+   - Questions to ask about their DevOps practices
 
 CV Content:
 ${truncatedText}`;
@@ -94,12 +96,12 @@ ${truncatedText}`;
       messages: [
         { 
           role: "system", 
-          content: "You are an expert technical interviewer and career coach. Create specific, detailed interview questions and guidance based on the candidate's actual experience. Use British English and be direct and practical." 
+          content: "You are an expert DevOps interviewer and technical recruiter. Create specific, detailed interview questions and guidance based on the candidate's actual DevOps experience. Use British English and be direct and practical. Focus on infrastructure, automation, and cloud technologies." 
         },
         { role: "user", content: prompt }
       ],
       temperature: 0.7,
-      max_tokens: 1500 // Reduced from 2500
+      max_tokens: 1500
     });
 
     res.json({ interviewPrep: completion.choices[0].message.content });
@@ -134,7 +136,7 @@ router.post('/industry-optimize', upload.single('file'), async (req, res) => {
       throw new Error('Failed to extract text from PDF');
     }
 
-    const prompt = `Based on this CV, provide a comprehensive industry optimization analysis. Include:
+    const prompt = `Based on this CV, provide a comprehensive industry optimisation analysis. Include:
 
 1. Skills Gap Analysis:
    - Compare current skills with industry demands

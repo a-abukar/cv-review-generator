@@ -181,7 +181,7 @@ app.post('/api/review', upload.single('file'), async (req, res) => {
     const prompt = `Review this CV in simple, direct British English. Address the candidate directly and be specific about what needs changing.
 
 ### Content Review:
-Hi Shurayeem, here's what needs work in your CV content:
+Hi [Person's Name], here's what needs work in your CV content:
 
 1. Profile (currently [X] lines, needs to be 3-4):
    - Your current profile: "[quote exact profile]"
