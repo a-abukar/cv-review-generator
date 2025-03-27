@@ -35,23 +35,31 @@ router.post('/interview-prep', upload.single('file'), async (req, res) => {
       fileType: req.file.mimetype
     });
 
-    const pdfData = await pdfParse(req.file.buffer);
+    // Parse PDF with minimal settings
+    const pdfData = await pdfParse(req.file.buffer, {
+      max: 1, // Only parse first page
+      pagerender: render_page
+    });
+    
     const pdfText = pdfData.text;
 
     if (!pdfText || pdfText.length === 0) {
       throw new Error('Failed to extract text from PDF');
     }
 
+    // Truncate text to reduce processing time
+    const truncatedText = pdfText.slice(0, 1000);
+
     const prompt = `Based on this CV, create a personalized interview preparation guide. Focus on:
 
 1. Technical Questions (10):
-   - Create questions based on the technologies in their CV: ${pdfText.match(/\b(?:Python|Java|JavaScript|React|Node|AWS|Docker|Kubernetes|etc)\b/g)?.join(', ')}
+   - Create questions based on the technologies in their CV: ${truncatedText.match(/\b(?:Python|Java|JavaScript|React|Node|AWS|Docker|Kubernetes|etc)\b/g)?.join(', ')}
    - Include both basic concepts and advanced scenarios
    - Provide detailed example answers with code snippets where relevant
 
 2. Experience Deep-Dive (5):
    - Create questions based on their specific projects and roles
-   - Focus on: ${pdfText.match(/(?<=• ).*$/gm)?.slice(0, 3).join(', ')}
+   - Focus on: ${truncatedText.match(/(?<=• ).*$/gm)?.slice(0, 3).join(', ')}
    - Include system design and architecture questions
    - Provide STAR method response templates
 
@@ -66,7 +74,7 @@ router.post('/interview-prep', upload.single('file'), async (req, res) => {
    - Questions to ask interviewers
 
 CV Content:
-${pdfText}`;
+${truncatedText}`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
@@ -78,7 +86,7 @@ ${pdfText}`;
         { role: "user", content: prompt }
       ],
       temperature: 0.7,
-      max_tokens: 2500
+      max_tokens: 1500 // Reduced from 2500
     });
 
     res.json({ interviewPrep: completion.choices[0].message.content });
