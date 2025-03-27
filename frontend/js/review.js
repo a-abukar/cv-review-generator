@@ -257,11 +257,13 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
           result = await response.json();
         } catch (e) {
-          // If response is not JSON, it's likely a timeout or server error
+          console.error('Error parsing response:', e);
           if (response.status === 504) {
             throw new Error('The interview prep is taking longer than expected. Please try again in a few moments.');
+          } else if (response.status === 500) {
+            throw new Error('Server error occurred. Please try again later.');
           } else {
-            throw new Error('Server error. Please try again later.');
+            throw new Error('Failed to process the response. Please try again.');
           }
         }
   
@@ -270,6 +272,8 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error('The interview prep is taking longer than expected. Please try again in a few moments.');
           } else if (result.error) {
             throw new Error(result.error);
+          } else if (result.details) {
+            throw new Error(result.details);
           } else {
             throw new Error('Failed to generate interview preparation');
           }

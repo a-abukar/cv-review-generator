@@ -65,7 +65,7 @@ router.post('/interview-prep', upload.single('file'), async (req, res) => {
 
     const prompt = `Based on this CV, create a personalised interview preparation guide focused on DevOps and infrastructure roles. Focus on:
 
-1. Technical Questions (4)):
+1. Technical Questions (4):
    - Create questions based on the DevOps technologies in their CV: ${truncatedText.match(/\b(?:Docker|Kubernetes|AWS|CI/CD|Jenkins|Git|Terraform|Ansible|Linux|Shell|Infrastructure|DevOps|Cloud)\b/g)?.join(', ')}
    - Include both basic concepts and advanced scenarios
    - Focus on infrastructure, automation, and cloud technologies
