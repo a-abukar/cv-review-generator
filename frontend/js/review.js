@@ -118,8 +118,42 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   
     // Function to call our backend API to generate a CV review
-    async function getCVReview(file) {
+    async function getCVReview(fileName) {
       try {
+        // Get the base64 string from localStorage
+        const base64String = localStorage.getItem('uploadedFile');
+        if (!base64String) {
+          throw new Error('No file found in localStorage');
+        }
+        console.log('getCVReview: Found file in localStorage, length:', base64String.length);
+
+        // Convert base64 to blob
+        const base64Data = base64String.split(',')[1];
+        const byteCharacters = atob(base64Data);
+        const byteArrays = [];
+        
+        for (let offset = 0; offset < byteCharacters.length; offset += 1024) {
+          const slice = byteCharacters.slice(offset, offset + 1024);
+          const byteNumbers = new Array(slice.length);
+          
+          for (let i = 0; i < slice.length; i++) {
+            byteNumbers[i] = slice.charCodeAt(i);
+          }
+          
+          const byteArray = new Uint8Array(byteNumbers);
+          byteArrays.push(byteArray);
+        }
+        
+        const blob = new Blob(byteArrays, { type: 'application/pdf' });
+        const file = new File([blob], fileName, { type: 'application/pdf' });
+
+        console.log('Sending file to backend:', {
+          fileName,
+          fileSize: file.size,
+          fileType: file.type
+        });
+
+        // Create FormData and append the file
         const formData = new FormData();
         formData.append('file', file);
 

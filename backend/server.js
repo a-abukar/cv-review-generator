@@ -173,7 +173,15 @@ async function extractVisualInfo(pdfDoc) {
 // CV Review endpoint using file upload
 app.post('/api/review', upload.single('file'), async (req, res) => {
   try {
+    debug.log('Received request:', {
+      hasFile: !!req.file,
+      fileSize: req.file?.size,
+      fileType: req.file?.mimetype,
+      headers: req.headers
+    });
+
     if (!req.file) {
+      debug.error('No file uploaded');
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
