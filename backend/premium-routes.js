@@ -1,28 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs').promises;
 const pdfParse = require('pdf-parse');
 const { openai, debug } = require('./config/openai');
 
-// Configure multer for file upload
-const storage = multer.diskStorage({
-  destination: async function (req, file, cb) {
-    const uploadDir = path.join(__dirname, 'uploads');
-    try {
-      await fs.mkdir(uploadDir, { recursive: true });
-      cb(null, uploadDir);
-    } catch (error) {
-      cb(error);
-    }
-  },
-  filename: function (req, file, cb) {
-    // Add timestamp to prevent filename conflicts
-    const timestamp = Date.now();
-    cb(null, `${timestamp}-${file.originalname}`);
-  }
-});
+// Configure multer for memory storage
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage: storage,
@@ -37,49 +20,59 @@ const upload = multer({
   }
 });
 
-// Helper function to clean up file
-async function cleanupFile(filePath) {
-  try {
-    if (filePath) {
-      await fs.unlink(filePath);
-      debug.log(`Cleaned up file: ${filePath}`);
-    }
-  } catch (error) {
-    debug.error(`Error cleaning up file: ${filePath}`, error);
-  }
-}
-
 // 1. Interview Preparation Feature
 router.post('/interview-prep', upload.single('file'), async (req, res) => {
   debug.log('Received interview prep request');
-  let filePath = null;
 
   try {
     if (!req.file) {
       throw new Error('No file uploaded');
     }
 
-    filePath = req.file.path;
-    debug.log('Processing file:', filePath);
+    debug.log('Processing file:', {
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      fileType: req.file.mimetype
+    });
 
-    const dataBuffer = await fs.readFile(filePath);
-    const pdfData = await pdfParse(dataBuffer);
+    // Parse PDF with minimal settings
+    const pdfData = await pdfParse(req.file.buffer, {
+      max: 1, // Only parse first page
+      pagerender: function(pageData) {
+        return pageData.getTextContent()
+          .then(function(textContent) {
+            let lastY, text = '';
+            for (let item of textContent.items) {
+              if (lastY != item.transform[5] && text) {
+                text += '\n';
+              }
+              text += item.str;
+              lastY = item.transform[5];
+            }
+            return text;
+          });
+      }
+    });
+    
     const pdfText = pdfData.text;
 
     if (!pdfText || pdfText.length === 0) {
       throw new Error('Failed to extract text from PDF');
     }
 
+    // Truncate text to reduce processing time
+    const truncatedText = pdfText.slice(0, 1000);
+
     const prompt = `Based on this CV, create a personalized interview preparation guide. Focus on:
 
 1. Technical Questions (10):
-   - Create questions based on the technologies in their CV: ${pdfText.match(/\b(?:Python|Java|JavaScript|React|Node|AWS|Docker|Kubernetes|etc)\b/g)?.join(', ')}
+   - Create questions based on the technologies in their CV: ${truncatedText.match(/\b(?:Python|Java|JavaScript|React|Node|AWS|Docker|Kubernetes|etc)\b/g)?.join(', ')}
    - Include both basic concepts and advanced scenarios
    - Provide detailed example answers with code snippets where relevant
 
 2. Experience Deep-Dive (5):
    - Create questions based on their specific projects and roles
-   - Focus on: ${pdfText.match(/(?<=• ).*$/gm)?.slice(0, 3).join(', ')}
+   - Focus on: ${truncatedText.match(/(?<=• ).*$/gm)?.slice(0, 3).join(', ')}
    - Include system design and architecture questions
    - Provide STAR method response templates
 
@@ -94,7 +87,7 @@ router.post('/interview-prep', upload.single('file'), async (req, res) => {
    - Questions to ask interviewers
 
 CV Content:
-${pdfText}`;
+${truncatedText}`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
@@ -106,14 +99,12 @@ ${pdfText}`;
         { role: "user", content: prompt }
       ],
       temperature: 0.7,
-      max_tokens: 2500
+      max_tokens: 1500 // Reduced from 2500
     });
 
-    await cleanupFile(filePath);
     res.json({ interviewPrep: completion.choices[0].message.content });
   } catch (error) {
     debug.error('Error in interview prep:', error);
-    await cleanupFile(filePath);
     res.status(500).json({ 
       error: 'Failed to generate interview preparation',
       details: error.message 
@@ -124,18 +115,19 @@ ${pdfText}`;
 // 2. Industry-Specific Optimization
 router.post('/industry-optimize', upload.single('file'), async (req, res) => {
   debug.log('Received industry optimization request');
-  let filePath = null;
 
   try {
     if (!req.file) {
       throw new Error('No file uploaded');
     }
 
-    filePath = req.file.path;
-    debug.log('Processing file:', filePath);
+    debug.log('Processing file:', {
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      fileType: req.file.mimetype
+    });
 
-    const dataBuffer = await fs.readFile(filePath);
-    const pdfData = await pdfParse(dataBuffer);
+    const pdfData = await pdfParse(req.file.buffer);
     const pdfText = pdfData.text;
 
     if (!pdfText || pdfText.length === 0) {
@@ -180,11 +172,9 @@ ${pdfText}`;
       max_tokens: 2000
     });
 
-    await cleanupFile(filePath);
     res.json({ industryOptimization: completion.choices[0].message.content });
   } catch (error) {
     debug.error('Error in industry optimization:', error);
-    await cleanupFile(filePath);
     res.status(500).json({ 
       error: 'Failed to generate industry optimization',
       details: error.message 
