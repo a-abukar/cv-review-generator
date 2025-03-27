@@ -2,19 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const rateLimit = require('express-rate-limit');
-const fs = require('fs').promises;
-const path = require('path');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
-const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 const { openai, debug } = require('./config/openai');
 const premiumRoutes = require('./premium-routes');
 
 // Load environment variables first
 dotenv.config();
-
-// Initialize PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = path.resolve(require.resolve('pdfjs-dist/legacy/build/pdf.worker.js'));
 
 // Configure multer for memory storage with optimized settings
 const storage = multer.memoryStorage();
@@ -34,12 +28,6 @@ const upload = multer({
 
 const app = express();
 const port = process.env.PORT || 3000;
-
-// Create uploads directory if it doesn't exist
-const uploadDir = path.join(__dirname, 'uploads');
-fs.mkdir(uploadDir, { recursive: true })
-  .then(() => debug.log('Uploads directory ready'))
-  .catch(err => debug.error('Error creating uploads directory:', err));
 
 // Rate limiting middleware
 const limiter = rateLimit({
@@ -96,61 +84,10 @@ app.use('/api/review', limiter);
 // Import and use premium routes
 app.use('/api/premium', premiumRoutes);
 
-// Middleware logger to log all incoming requests
-app.use((req, res, next) => {
-  debug.log('Incoming request:', {
-    method: req.method,
-    url: req.url,
-    body: req.body
-  });
-  next();
-});
-
-// Apply rate limiter to OpenAI endpoints
-app.use('/api/chatgpt/review-summary', openAILimiter);
-
-debug.log('Middleware configured');
-
 // Function to truncate text to a maximum length
 function truncateText(text, maxLength = 4000) {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength) + '...';
-}
-
-// Function to extract visual information from PDF (currently not used, but available)
-async function extractVisualInfo(pdfDoc) {
-  try {
-    const page = await pdfDoc.getPage(1);
-    const viewport = page.getViewport({ scale: 1.0 });
-    const textContent = await page.getTextContent();
-    
-    const fonts = new Set();
-    textContent.items.forEach(item => {
-      if (item.fontName) fonts.add(item.fontName);
-    });
-
-    const layout = {
-      width: viewport.width,
-      height: viewport.height,
-      textItems: textContent.items.slice(0, 20).map(item => ({
-        text: item.str.substring(0, 50),
-        x: item.transform[4],
-        y: item.transform[5],
-        fontName: item.fontName
-      }))
-    };
-
-    return {
-      fonts: Array.from(fonts).slice(0, 5),
-      layout: layout
-    };
-  } catch (error) {
-    debug.error('Error extracting visual information:', error);
-    return {
-      fonts: [],
-      layout: null
-    };
-  }
 }
 
 // CV Review endpoint using file upload
@@ -169,14 +106,31 @@ app.post('/api/review', upload.single('file'), async (req, res) => {
     // Parse PDF content from buffer with minimal settings
     const pdfData = await pdfParse(req.file.buffer, {
       max: 1, // Only parse first page
-      pagerender: render_page
+      pagerender: function(pageData) {
+        return pageData.getTextContent()
+          .then(function(textContent) {
+            let lastY, text = '';
+            for (let item of textContent.items) {
+              if (lastY != item.transform[5] && text) {
+                text += '\n';
+              }
+              text += item.str;
+              lastY = item.transform[5];
+            }
+            return text;
+          });
+      }
     });
     
     const pdfText = pdfData.text;
     debug.log('PDF text extracted, length:', pdfText.length);
 
+    if (!pdfText || pdfText.length === 0) {
+      throw new Error('Failed to extract text from PDF');
+    }
+
     // Truncate text to reduce processing time
-    const truncatedText = truncateText(pdfText, 1000); // Reduced to 1000 characters
+    const truncatedText = truncateText(pdfText, 1000);
 
     const prompt = `Review this CV in simple, direct British English. Address the candidate directly and be specific about what needs changing.
 
@@ -227,350 +181,42 @@ Remember: Keep your bullet points to one line, use high contrast colours, and en
 CV Content:
 ${truncatedText}`;
 
-    const systemMessage = "You are a friendly but direct British CV expert. Write in simple, clear British English. Address the candidate by name. Be extremely specific about what needs changing and where. No vague suggestions - point to exact content and give clear fixes.";
-
-    debug.log('Sending prompt to OpenAI');
-
-    // Call OpenAI API with a shorter timeout
     const completion = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
       messages: [
-        { role: "system", content: systemMessage },
+        { 
+          role: "system", 
+          content: "You are an expert CV reviewer. Provide specific, actionable feedback in British English. Focus on concrete changes and exact improvements needed." 
+        },
         { role: "user", content: prompt }
       ],
-      temperature: 0.3,
-      max_tokens: 800 // Reduced from 1500
+      temperature: 0.7,
+      max_tokens: 2000
     });
 
-    debug.log('Received response from OpenAI');
-    const openAiResponse = completion.choices[0].message.content;
+    const review = completion.choices[0].message.content;
+    const sections = review.split(/(?=### Design Review:)/);
+    
+    res.json({
+      contentReview: sections[0].replace('### Content Review:', '').trim(),
+      designReview: sections[1]?.replace('### Design Review:', '').trim() || ''
+    });
 
-    // New approach to split reviews
-    function extractReviews(text) {
-        // Initialize default values
-        let contentReview = '';
-        let designReview = '';
-        
-        try {
-            // Split the entire response into sections
-            const sections = text.split(/(?=### (?:Content|Design) Review:)/g);
-            
-            // Process each section
-            sections.forEach(section => {
-                if (section.trim().startsWith('### Content Review:')) {
-                    contentReview = section
-                        .replace('### Content Review:', '')
-                        .split('### Design Review:')[0]  // Remove any design review part
-                        .trim();
-                }
-                else if (section.trim().startsWith('### Design Review:')) {
-                    designReview = section
-                        .replace('### Design Review:', '')
-                        .trim();
-                }
-            });
-
-            // Additional cleanup
-            contentReview = contentReview
-                .replace(/Design Review/g, '')  // Remove any remaining "Design Review" text
-                .replace(/^\s*[\d.]+\s*Profile:?/m, '')  // Remove profile header
-                .replace(/^\s*[\d.]+\s*Layout[^:]*:?/m, '')  // Remove layout header
-                .trim();
-
-            designReview = designReview
-                .replace(/^\s*[\d.]+\s*Layout[^:]*:?/m, '')  // Remove layout header
-                .trim();
-
-            return { contentReview, designReview };
-        } catch (error) {
-            debug.error('Error splitting reviews:', error);
-            return {
-                contentReview: text.split('### Design Review:')[0].replace('### Content Review:', '').trim(),
-                designReview: text.split('### Design Review:')[1]?.trim() || ''
-            };
-        }
-    }
-
-    // Extract the reviews
-    const { contentReview, designReview } = extractReviews(openAiResponse);
-
-    // Send response immediately
-    res.json({ contentReview, designReview });
-    debug.log('Review response sent to client');
   } catch (error) {
     debug.error('Error processing review:', error);
     res.status(500).json({ 
-      error: error.message || 'An error occurred while processing the review' 
+      error: 'Failed to process the review',
+      details: error.message 
     });
-  }
-});
-
-// Custom render function for PDF parsing
-function render_page(pageData) {
-  let render_options = {
-    normalizeWhitespace: true,
-    disableCombineTextItems: false
-  };
-
-  return pageData.getTextContent(render_options)
-    .then(function(textContent) {
-      let lastY, text = '';
-      for (let item of textContent.items) {
-        if (lastY != item.transform[5]) {
-          text += '\n';
-        }
-        text += item.str;
-        lastY = item.transform[5];
-      }
-      return text;
-    });
-}
-
-// Premium feature endpoints
-app.post('/api/premium/interview-prep', upload.single('file'), async (req, res) => {
-  debug.log('Received interview prep request');
-
-  if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
-  }
-
-  try {
-    const dataBuffer = await fs.readFile(req.file.path);
-    const pdfData = await pdfParse(dataBuffer);
-    const pdfText = pdfData.text;
-
-    const prompt = `Based on this CV, generate a comprehensive interview preparation guide. Include:
-
-1. Technical Questions (10 questions):
-   - Focus on the specific technologies mentioned in the CV
-   - Include both basic and advanced questions
-   - Provide detailed example answers
-
-2. Experience-Based Questions (5 scenarios):
-   - Create questions based on their actual work experience
-   - Include challenging situations they might have faced
-   - Provide guidance on how to structure responses using the STAR method
-
-3. Project Deep-Dives (3 questions):
-   - Questions about the specific projects mentioned in their CV
-   - Technical architecture decisions
-   - Challenge handling and problem-solving
-
-4. Salary Negotiation:
-   - Market rate analysis for their role and experience level
-   - Specific talking points based on their achievements
-   - Negotiation strategies
-
-CV Content:
-${pdfText}`;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
-      messages: [
-        { 
-          role: "system", 
-          content: "You are an expert technical interviewer and career coach. Provide detailed, specific interview preparation advice based on the candidate's actual experience." 
-        },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 2000
-    });
-
-    // Clean up file
-    await fs.unlink(req.file.path);
-
-    res.json({ interviewPrep: completion.choices[0].message.content });
-  } catch (error) {
-    debug.error('Error generating interview prep:', error);
-    if (req.file?.path) await fs.unlink(req.file.path);
-    res.status(500).json({ error: 'Failed to generate interview preparation' });
-  }
-});
-
-app.post('/api/premium/industry-optimize', upload.single('file'), async (req, res) => {
-  debug.log('Received industry optimization request');
-
-  if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
-  }
-
-  try {
-    const dataBuffer = await fs.readFile(req.file.path);
-    const pdfData = await pdfParse(dataBuffer);
-    const pdfText = pdfData.text;
-
-    const prompt = `Based on this CV, provide a comprehensive industry optimization analysis. Include:
-
-1. Skills Gap Analysis:
-   - Compare current skills with industry demands
-   - Identify missing critical skills
-   - Suggest specific certifications or training
-
-2. Industry Insights:
-   - Current market trends in their field
-   - Growing technologies and skills
-   - Industry-specific best practices
-
-3. CV Optimization:
-   - Industry-specific keyword recommendations
-   - ATS optimization suggestions
-   - Format and content adjustments for the industry
-
-4. Competitive Analysis:
-   - Position in the current market
-   - Unique selling points
-   - Areas for differentiation
-
-CV Content:
-${pdfText}`;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
-      messages: [
-        { 
-          role: "system", 
-          content: "You are an expert career advisor with deep knowledge of industry trends and requirements. Provide detailed, actionable optimization advice based on the candidate's CV." 
-        },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 2000
-    });
-
-    // Clean up file
-    await fs.unlink(req.file.path);
-
-    res.json({ industryOptimization: completion.choices[0].message.content });
-  } catch (error) {
-    debug.error('Error generating industry optimization:', error);
-    if (req.file?.path) await fs.unlink(req.file.path);
-    res.status(500).json({ error: 'Failed to generate industry optimization' });
-  }
-});
-
-// Review Summary endpoint
-app.post('/api/chatgpt/review-summary', async (req, res) => {
-  try {
-    const { contentReview, designReview } = req.body;
-    
-    if (!contentReview || !designReview) {
-      return res.status(400).json({ error: 'Missing review content' });
-    }
-
-    debug.log('Generating review summary for:', {
-      contentLength: contentReview?.length,
-      designLength: designReview?.length
-    });
-
-    // Clean and prepare the reviews
-    const cleanContent = contentReview.replace(/\n{3,}/g, '\n\n').trim();
-    const cleanDesign = designReview.replace(/\n{3,}/g, '\n\n').trim();
-
-    // Prepare the prompt for ChatGPT
-    const prompt = `
-      Based on the CV review below, create a concise summary with scores and action points.
-      Return a JSON object with exactly these fields:
-      - score (number 0-100)
-      - strengths (array of 3 strings)
-      - improvements (array of 3 strings)
-      - actionPoints (array of 3 objects with title and description)
-
-      Content Review:
-      ${cleanContent}
-
-      Design Review:
-      ${cleanDesign}
-    `;
-
-    debug.log('Sending prompt to OpenAI');
-    
-    // Call ChatGPT API
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
-      messages: [
-        {
-          role: "system",
-          content: "You are a CV review analyzer. ONLY return a valid JSON object — no backticks, no explanations, no markdown. The JSON must contain: score (0-100), strengths (3 items), improvements (3 items), and actionPoints (3 items with title and description)."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      temperature: 0.3,
-      max_tokens: 1000
-    });
-
-    debug.log('Received response from OpenAI');
-
-    if (!completion.choices?.[0]?.message?.content) {
-      throw new Error('Invalid response from OpenAI');
-    }
-
-    const rawResponse = completion.choices[0].message.content.trim();
-    debug.log('Raw OpenAI response:', rawResponse);
-
-    try {
-      // Extract JSON from the response
-      let cleanResponse = rawResponse;
-      
-      // First, try to find JSON within markdown code blocks
-      const codeBlockMatch = rawResponse.match(/```(?:json)?\n([\s\S]*?)\n```/);
-      if (codeBlockMatch) {
-        cleanResponse = codeBlockMatch[1];
-      } else {
-        // If no code blocks, try to find JSON directly
-        const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          cleanResponse = jsonMatch[0];
-        }
-      }
-      
-      cleanResponse = cleanResponse.trim();
-      debug.log('Cleaned response:', cleanResponse);
-
-      // Parse and validate the response
-      const jsonResponse = JSON.parse(cleanResponse);
-      
-      // Validate structure and types
-      if (typeof jsonResponse.score !== 'number' || 
-          !Array.isArray(jsonResponse.strengths) || 
-          !Array.isArray(jsonResponse.improvements) || 
-          !Array.isArray(jsonResponse.actionPoints)) {
-        throw new Error('Invalid JSON structure');
-      }
-
-      // Ensure arrays have exactly 3 items and are properly formatted
-      jsonResponse.strengths = jsonResponse.strengths.slice(0, 3).map(s => String(s).trim());
-      jsonResponse.improvements = jsonResponse.improvements.slice(0, 3).map(s => String(s).trim());
-      jsonResponse.actionPoints = jsonResponse.actionPoints.slice(0, 3).map(point => ({
-        title: String(point.title || '').trim(),
-        description: String(point.description || '').trim()
-      }));
-      
-      // Ensure score is between 0 and 100
-      jsonResponse.score = Math.min(Math.max(Math.round(jsonResponse.score), 0), 100);
-      
-      debug.log('Processed response:', jsonResponse);
-      res.json(jsonResponse);
-    } catch (parseError) {
-      debug.error('Error parsing OpenAI response:', parseError);
-      debug.error('Raw response that failed to parse:', rawResponse);
-      res.status(500).json({ error: 'Failed to parse review summary' });
-    }
-  } catch (error) {
-    debug.error('Error in review summary generation:', error);
-    res.status(500).json({ error: 'Failed to generate review summary' });
   }
 });
 
 // Error handling middleware must be after all routes
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  debug.error('Global error handler:', err);
   res.status(500).json({ 
     error: 'Something went wrong!',
-    message: err.message 
+    details: err.message 
   });
 });
 

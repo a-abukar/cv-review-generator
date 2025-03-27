@@ -129,12 +129,33 @@ router.post('/industry-optimize', upload.single('file'), async (req, res) => {
       fileType: req.file.mimetype
     });
 
-    const pdfData = await pdfParse(req.file.buffer);
+    // Parse PDF with minimal settings
+    const pdfData = await pdfParse(req.file.buffer, {
+      max: 1, // Only parse first page
+      pagerender: function(pageData) {
+        return pageData.getTextContent()
+          .then(function(textContent) {
+            let lastY, text = '';
+            for (let item of textContent.items) {
+              if (lastY != item.transform[5] && text) {
+                text += '\n';
+              }
+              text += item.str;
+              lastY = item.transform[5];
+            }
+            return text;
+          });
+      }
+    });
+    
     const pdfText = pdfData.text;
 
     if (!pdfText || pdfText.length === 0) {
       throw new Error('Failed to extract text from PDF');
     }
+
+    // Truncate text to reduce processing time
+    const truncatedText = pdfText.slice(0, 1000);
 
     const prompt = `Based on this CV, provide a comprehensive industry optimisation analysis. Include:
 
@@ -159,7 +180,7 @@ router.post('/industry-optimize', upload.single('file'), async (req, res) => {
    - Areas for differentiation
 
 CV Content:
-${pdfText}`;
+${truncatedText}`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
